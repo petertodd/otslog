@@ -1,0 +1,41 @@
+# Necessary Operations
+
+## Read-Only
+
+### Get timestamp at a given index
+
+Returns timestamp containing given index, as well as a file truncated to that
+index or higher.
+
+
+### Validate midstates
+
+Validate that the midstates for a proof log in a given range are correct. If
+range.start != 0, an internal midstate's validity is assumed.
+
+
+## Read/Append-Only
+
+### Append timestamp
+
+Add one more timestamp to the end of the timestamp proof log.
+
+Sub-variant: follow mode, where we do not quit and keep adding new timestamp
+proofs over time.
+
+
+## Read/Write
+
+### Upgrade
+
+Upgrade the proofs in the log, creating an entirely new log file.
+
+
+### Prune
+
+Prune the proofs in the log, creating an entirely new log file.
+
+
+# Architecture
+
+If we do this as async tasks, we can get progress bars, etc.
