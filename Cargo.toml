@@ -3,11 +3,17 @@ name = "rolling-timestamp"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "otslog"
+
 [dependencies]
 bitcoin_hashes = "0.18.0"
 breccia = { path = "../breccia" }
 thiserror = "2.0.17"
 opentimestamps = { path = "../rust-opentimestamps" }
+
+# binary only; we can clean this up later
+clap = { version = "4.5.27", features = ["derive"] }
 
 [dev-dependencies]
 tempfile = "3.23.0"
