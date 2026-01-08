@@ -1,9 +1,17 @@
+use std::fs::{File, OpenOptions};
 use std::num::NonZero;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
+
+use opentimestamps::timestamp::TimestampBuilder;
+use opentimestamps::op::HashOp;
+use opentimestamps::rpc;
+use opentimestamps::timestamp::detached::{DetachedTimestampFile, FileDigest};
+
+use rolling_timestamp::IncrementalHasher;
 
 fn parse_duration(arg: &str) -> Result<Duration, std::num::ParseFloatError> {
     let seconds = arg.parse()?;
@@ -30,10 +38,10 @@ enum Command {
 #[derive(Parser, Debug)]
 struct StampArgs {
     #[arg(name = "FILE", required = true)]
-    src_file: PathBuf,
+    src_path: PathBuf,
 
     #[arg(name = "OTSLOG")]
-    otslog_file: Option<PathBuf>,
+    otslog_path: Option<PathBuf>,
 
     #[arg(short, long, name = "AGGREGATOR")]
     aggregators: Vec<String>,
@@ -47,11 +55,12 @@ struct StampArgs {
     min_attestations: NonZero<usize>,
 
     // Follow changes in the file, creating a new timestamp periodically if new data is written.
-    #[arg(long, value_parser = parse_duration, default_value = "5.0")]
+    #[arg(long, value_parser = parse_duration, default_value = "600")]
     follow: Duration,
 }
 
-fn main() -> ExitCode {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Cli::parse();
 
     let _verbosity: isize = (args.verbose as isize) - (args.quiet as isize);
@@ -59,10 +68,45 @@ fn main() -> ExitCode {
     dbg!(&args);
 
     match args.command {
-        Command::Stamp(_args) => {
-            todo!()
-        },
+        Command::Stamp(args) => stamp_command(args).await,
     }
+}
 
-    //ExitCode::SUCCESS
+async fn stamp_command(args: StampArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let src_fd = File::open(args.src_path)?;
+    let mut hasher = IncrementalHasher::new(src_fd);
+
+    let entry = loop {
+        if let Some((midstate, digest, idx)) = dbg!(hasher.hash_next_chunk()?) {
+            let digest: [u8; 32] = digest.to_byte_array();
+            let digest = FileDigest::Sha256(digest);
+
+            let nonce: [u8; 16] = rand::random();
+            let mut ts = TimestampBuilder::new(digest)
+                                      .append(&nonce[..])
+                                      .hash(HashOp::Sha256);
+
+            let digest: [u8; 32] = ts.result().try_into().expect("sha256 output is 32 bytes");
+
+            let digest_ts = rpc::stamp_with_options(digest, Default::default()).await?;
+
+            break ts.finish_with_timestamps([digest_ts])
+        };
+    };
+
+    let otslog_path = if let Some(path) = args.otslog_path {
+        path
+    } else {
+        todo!()
+    };
+
+    let mut otslog_fd = OpenOptions::new()
+                                .write(true)
+                                .create(true)
+                                .open(otslog_path)?;
+    let detached_ts = DetachedTimestampFile::new(entry);
+
+    detached_ts.serialize(&mut otslog_fd)?;
+
+    Ok(())
 }
