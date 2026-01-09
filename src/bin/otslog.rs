@@ -1,4 +1,5 @@
 use std::fs::{File, OpenOptions};
+use std::io;
 use std::num::NonZero;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -11,7 +12,7 @@ use opentimestamps::op::HashOp;
 use opentimestamps::rpc;
 use opentimestamps::timestamp::detached::{DetachedTimestampFile, FileDigest};
 
-use rolling_timestamp::IncrementalHasher;
+use rolling_timestamp::{Entry, JournalMut, IncrementalHasher};
 
 fn parse_duration(arg: &str) -> Result<Duration, std::num::ParseFloatError> {
     let seconds = arg.parse()?;
@@ -73,14 +74,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn stamp_command(args: StampArgs) -> Result<(), Box<dyn std::error::Error>> {
-    let src_fd = File::open(args.src_path)?;
+    let src_fd = File::open(&args.src_path)?;
     let mut hasher = IncrementalHasher::new(src_fd);
+
+    let otslog_path = args.otslog_path.unwrap_or_else(||{
+        let mut p = args.src_path.clone();
+        p.add_extension("otslog");
+        p
+    });
+
+    let mut otslog = match JournalMut::open(&otslog_path) {
+        Ok(otslog) => otslog,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            JournalMut::create(&otslog_path)?
+        },
+        Err(err) => { return Err(err.into()); },
+    };
 
     let entry = loop {
         if let Some((midstate, digest, idx)) = dbg!(hasher.hash_next_chunk()?) {
-            let digest: [u8; 32] = digest.to_byte_array();
-            let digest = FileDigest::Sha256(digest);
-
             let nonce: [u8; 16] = rand::random();
             let mut ts = TimestampBuilder::new(digest)
                                       .append(&nonce[..])
@@ -90,23 +102,12 @@ async fn stamp_command(args: StampArgs) -> Result<(), Box<dyn std::error::Error>
 
             let digest_ts = rpc::stamp_with_options(digest, Default::default()).await?;
 
-            break ts.finish_with_timestamps([digest_ts])
+            let (midstate, _) = midstate.to_parts();
+            break Entry::new(idx, midstate, ts.finish_with_timestamps([digest_ts]))
         };
     };
 
-    let otslog_path = if let Some(path) = args.otslog_path {
-        path
-    } else {
-        todo!()
-    };
-
-    let mut otslog_fd = OpenOptions::new()
-                                .write(true)
-                                .create(true)
-                                .open(otslog_path)?;
-    let detached_ts = DetachedTimestampFile::new(entry);
-
-    detached_ts.serialize(&mut otslog_fd)?;
+    otslog.write_entry(&entry)?;
 
     Ok(())
 }

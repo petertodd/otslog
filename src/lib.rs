@@ -25,6 +25,10 @@ pub struct Entry {
 }
 
 impl Entry {
+    pub fn new(idx: u64, midstate: [u8; 32], timestamp: Timestamp<sha256::Hash>) -> Self {
+        Self { idx, midstate, timestamp }
+    }
+
     pub fn serialize(&self, w: &mut impl io::Write) -> io::Result<()> {
         w.write_all(&self.idx.to_le_bytes())?;
         w.write_all(&self.midstate[..])?;
@@ -123,6 +127,18 @@ impl JournalMut {
     pub fn create_from_file(fd: File) -> io::Result<Self> {
         Ok(Self {
             breccia: BrecciaMut::create_from_file(fd, Header {})?,
+        })
+    }
+
+    pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        Ok(Self {
+            breccia: BrecciaMut::open(path)?,
+        })
+    }
+
+    pub fn create<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        Ok(Self {
+            breccia: BrecciaMut::create(path, Header {})?,
         })
     }
 
