@@ -41,10 +41,6 @@ impl Entry {
         r.read_exact(&mut idx[..])?;
         let idx = u64::from_le_bytes(idx);
 
-        if idx % 64 != 0 {
-            todo!("handle index being not a multiple of 64");
-        }
-
         let mut midstate = [0u8; 32];
         r.read_exact(&mut midstate[..])?;
 
@@ -107,6 +103,7 @@ impl std::ops::Deref for JournalMut {
     }
 }
 
+#[derive(Debug)]
 pub enum GetEntryError {
 }
 
@@ -118,8 +115,39 @@ impl Journal {
         })
     }
 
-    pub fn get_entry(&self, _idx: usize) -> Result<Entry, GetEntryError> {
-        todo!()
+    /// Returns the first entry with an index >= `idx`
+    pub fn get_entry(&self, idx: u64) -> Result<Option<Entry>, GetEntryError> {
+        let mut best_entry: Option<Entry> = None;
+
+        let _ = self.breccia.binary_search(|_offset, mut blob| {
+            let entry = match Entry::deserialize(&mut blob) {
+                Ok(entry) => entry,
+                Err(err) => {
+                    todo!("unhandled deserialization error: {:?}", err);
+                },
+            };
+
+            if idx < entry.idx {
+                best_entry = if let Some(prev_best_entry) = best_entry.take() {
+                    if entry.idx < prev_best_entry.idx {
+                        Some(entry)
+                    } else {
+                        Some(prev_best_entry)
+                    }
+                } else {
+                    Some(entry)
+                };
+
+                Err(breccia::Search::Left)
+            } else if entry.idx == idx {
+                best_entry = Some(entry);
+                Ok(Some(()))
+            } else { // entry.idx < idx
+                Err(breccia::Search::Right)
+            }
+        });
+
+        Ok(best_entry)
     }
 }
 
@@ -276,11 +304,39 @@ mod tests {
 
     use tempfile::{tempfile, NamedTempFile};
 
+    use opentimestamps::timestamp::TimestampBuilder;
+    use opentimestamps::attestation::Attestation;
+
     #[test]
     fn create() -> io::Result<()> {
-        let journal = JournalMut::create_from_file(tempfile()?)?;
+        let _journal = JournalMut::create_from_file(tempfile()?)?;
+        Ok(())
+    }
 
-        dbg!(&journal);
+    #[test]
+    fn journal_get_entry() -> io::Result<()> {
+        let mut journal = JournalMut::create_from_file(tempfile()?)?;
+
+        assert_eq!(journal.get_entry(0).unwrap(), None);
+        assert_eq!(journal.get_entry(u64::MAX).unwrap(), None);
+
+        let empty_ts = TimestampBuilder::new(sha256::Hash::from_byte_array([0; 32]))
+                                        .finish_with_attestation(Attestation::Bitcoin { block_height: 0 });
+
+        let entry0 = Entry::new(0, [0; 32], empty_ts.clone());
+        journal.write_entry(&entry0)?;
+
+        assert_eq!(&journal.get_entry(0).unwrap().unwrap(), &entry0);
+        // assert_eq!(journal.get_entry(1).unwrap(), None);
+
+        let entry100 = Entry::new(100, [0; 32], empty_ts.clone());
+        journal.write_entry(&entry100)?;
+
+        assert_eq!(&journal.get_entry(0).unwrap().unwrap(), &entry0);
+        assert_eq!(&journal.get_entry(100).unwrap().unwrap(), &entry100);
+        assert_eq!(&journal.get_entry(50).unwrap().unwrap(), &entry100);
+        assert_eq!(journal.get_entry(101).unwrap(), None);
+
         Ok(())
     }
 

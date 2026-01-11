@@ -130,6 +130,7 @@ checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
 [[package]]
 name = "breccia"
 version = "0.1.0"
+source = "git+https://github.com/petertodd/breccia.git#38a42d36eaa388a8a4d15569e1ae5114d8e0b848"
 dependencies = [
  "memmap2",
  "thiserror",
@@ -806,6 +807,7 @@ dependencies = [
 [[package]]
 name = "opentimestamps"
 version = "0.3.0-dev"
+source = "git+https://github.com/petertodd/rust-opentimestamps.git#828527dd8b1516c5d5db4a3e61f3736dce02c710"
 dependencies = [
  "bitcoin_hashes 0.16.0",
  "rand",

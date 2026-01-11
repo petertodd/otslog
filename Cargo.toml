@@ -8,9 +8,9 @@ name = "otslog"
 
 [dependencies]
 bitcoin_hashes = "0.18.0"
-breccia = { path = "../breccia" }
+breccia = { git = "https://github.com/petertodd/breccia.git" }
 thiserror = "2.0.17"
-opentimestamps = { path = "../rust-opentimestamps" }
+opentimestamps = { git = "https://github.com/petertodd/rust-opentimestamps.git" }
 
 # binary only; we can clean this up later
 clap = { version = "4.5.27", features = ["derive"] }
