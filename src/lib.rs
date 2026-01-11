@@ -10,18 +10,18 @@ use opentimestamps::timestamp::Timestamp;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     /// The position within the source file that the timestamp corresponds to.
-    idx: u64,
+    pub idx: u64,
 
     /// The most recent midstate as of `idx`.
     ///
     /// SHA245 Midstates are only computed every 64 bytes, so this corresponds to the midstate at
     /// `idx % 64`.
-    midstate: [u8; 32],
+    pub midstate: [u8; 32],
 
     /// The timestamp proof itself.
     ///
     /// The digest is serialized, allowing entries to be consistency checked.
-    timestamp: Timestamp<sha256::Hash>,
+    pub timestamp: Timestamp<sha256::Hash>,
 }
 
 impl Entry {
@@ -103,7 +103,7 @@ impl std::ops::Deref for JournalMut {
     }
 }
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum GetEntryError {
 }
 
