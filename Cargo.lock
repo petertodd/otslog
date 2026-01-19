@@ -807,7 +807,7 @@ dependencies = [
 [[package]]
 name = "opentimestamps"
 version = "0.3.0-dev"
-source = "git+https://github.com/petertodd/rust-opentimestamps.git#9ebb4beaac05ff9298a5bef5089fac4e46ef618f"
+source = "git+https://github.com/petertodd/rust-opentimestamps.git#97e885441a8e7d1dc65b811c872c99987217ae53"
 dependencies = [
  "bitcoin_hashes 0.16.0",
  "rand",
