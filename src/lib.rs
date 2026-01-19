@@ -149,6 +149,19 @@ impl Journal {
 
         Ok(best_entry)
     }
+
+    /// Returns the last entry, if it exists.
+    ///
+    /// If the blob containing the last entry is malformed, an error is returned.
+    pub fn last_entry(&self) -> Result<Option<Entry>, Box<dyn std::error::Error>> {
+        match self.breccia.blobs().next_back() {
+            None => Ok(None),
+            Some((_offset, mut last_blob)) => {
+                let entry = Entry::deserialize(&mut last_blob)?;
+                Ok(Some(entry))
+            },
+        }
+    }
 }
 
 impl JournalMut {
@@ -234,7 +247,7 @@ impl<F: Read + Seek> IncrementalHasher<F> {
     pub fn from_fd_at_idx(mut fd: F, idx: u64, state: [u8; 32]) -> io::Result<Self> {
         let fd_len = fd.seek(SeekFrom::End(0))?;
 
-        if fd_len > idx {
+        if idx > fd_len {
             todo!("fd was truncated");
         }
 

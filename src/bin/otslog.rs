@@ -89,7 +89,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn stamp_command(args: StampArgs) -> Result<(), Box<dyn std::error::Error>> {
     let src_fd = File::open(&args.src_path)?;
-    let mut hasher = IncrementalHasher::new(src_fd);
 
     let otslog_path = args.otslog_path.unwrap_or_else(||{
         let mut p = args.src_path.clone();
@@ -105,10 +104,16 @@ async fn stamp_command(args: StampArgs) -> Result<(), Box<dyn std::error::Error>
         Err(err) => { return Err(err.into()); },
     };
 
+    let mut hasher = if let Some(last_entry) = dbg!(otslog.last_entry()?) {
+        IncrementalHasher::from_fd_at_idx(src_fd, last_entry.idx, last_entry.midstate)?
+    } else {
+        IncrementalHasher::new(src_fd)
+    };
+
     let entry = loop {
         if let Some((midstate, digest, idx)) = dbg!(hasher.hash_next_chunk()?) {
             let nonce: [u8; 16] = rand::random();
-            let mut ts = TimestampBuilder::new(digest)
+            let ts = TimestampBuilder::new(digest)
                                       .append(&nonce[..])
                                       .hash(HashOp::Sha256);
 
