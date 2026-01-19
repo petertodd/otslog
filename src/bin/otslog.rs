@@ -2,7 +2,6 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read};
 use std::num::NonZero;
 use std::path::PathBuf;
-use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
@@ -140,7 +139,7 @@ async fn extract_command(args: ExtractArgs) -> Result<(), Box<dyn std::error::Er
         p
     });
 
-    let mut otslog = Journal::open(&otslog_path)?;
+    let otslog = Journal::open(&otslog_path)?;
 
     if let Some(entry) = otslog.get_entry(args.offset)? {
         let truncated_src_path = args.src_path.with_added_extension(args.offset.to_string());
