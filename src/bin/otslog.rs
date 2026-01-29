@@ -3,6 +3,8 @@ use std::io::{self, Read};
 use std::num::NonZero;
 use std::path::PathBuf;
 use std::time::Duration;
+use std::time::Instant;
+use std::thread::sleep;
 
 use clap::{Parser, Subcommand};
 
@@ -12,6 +14,8 @@ use opentimestamps::rpc;
 use opentimestamps::timestamp::detached::{DetachedTimestampFile, FileDigest};
 
 use rolling_timestamp::{Entry, Journal, JournalMut, IncrementalHasher};
+
+
 
 fn parse_duration(arg: &str) -> Result<Duration, std::num::ParseFloatError> {
     let seconds = arg.parse()?;
@@ -109,23 +113,48 @@ async fn stamp_command(args: StampArgs) -> Result<(), Box<dyn std::error::Error>
         IncrementalHasher::new(src_fd)
     };
 
-    let entry = loop {
-        if let Some((midstate, digest, idx)) = dbg!(hasher.hash_next_chunk()?) {
-            let nonce: [u8; 16] = rand::random();
-            let ts = TimestampBuilder::new(digest)
-                                      .append(&nonce[..])
-                                      .hash(HashOp::Sha256);
+    /// Track when we last created a timestamp. This is used to throttle timestamp
+    /// creation according to --follow duration, avoiding excessive API calls when
+    /// the source file is being written to rapidly.
+    let mut last_stamp_time = Instant::now();
 
-            let digest: [u8; 32] = ts.result().try_into().expect("sha256 output is 32 bytes");
+    loop {
+        match hasher.hash_next_chunk() {
+            Ok(Some((midstate, digest, idx))) => {
+                /// New data was hashed. Only create a timestamp if sufficient time
+                /// has passed since the last one. This batches rapid writes into
+                /// periodic timestamps rather than one per chunk.
+                if last_stamp_time.elapsed() < args.follow {
+                    continue;
+                }
 
-            let digest_ts = rpc::stamp_with_options(digest, Default::default()).await?;
+                let nonce: [u8; 16] = rand::random();
+                let ts = TimestampBuilder::new(digest)
+                                          .append(&nonce[..])
+                                          .hash(HashOp::Sha256);
 
-            let (midstate, _) = midstate.to_parts();
-            break Entry::new(idx, midstate, ts.finish_with_timestamps([digest_ts]))
-        };
-    };
+                let digest: [u8; 32] = ts.result().try_into().expect("sha256 output is 32 bytes");
 
-    otslog.write_entry(&entry)?;
+                let digest_ts = rpc::stamp_with_options(digest, Default::default()).await?;
+
+                let (midstate, _) = midstate.to_parts();
+                let entry = Entry::new(idx, midstate, ts.finish_with_timestamps([digest_ts]));  
+                otslog.write_entry(&entry)?;
+
+                last_stamp_time = Instant::now();
+            },
+            Ok(None) => {
+                /// Reached end of file. If --follow is non-zero, sleep and poll
+                /// for new data. Otherwise, we're done.
+                if args.follow.as_secs() > 0 {
+                    sleep(Duration::from_millis(1000));
+                } else {
+                    break;
+                }
+            },
+            Err(e) => return Err(e.into()),
+        }
+    }
 
     Ok(())
 }
